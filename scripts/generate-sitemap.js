@@ -30,8 +30,19 @@ function normalizeUrl(routePath) {
   return `${CANONICAL_DOMAIN}${normalizedPath}`;
 }
 
+function getFileLastmod(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      return stats.mtime.toISOString().split("T")[0];
+    }
+  } catch {
+    // Ignore error and omit lastmod if not reliably available
+  }
+  return undefined;
+}
+
 export function generateSitemap() {
-  const today = new Date().toISOString().split("T")[0];
   const urlEntries = new Map();
 
   function addUrl(rawPath, options = {}) {
@@ -43,9 +54,7 @@ export function generateSitemap() {
     if (!urlEntries.has(fullUrl)) {
       urlEntries.set(fullUrl, {
         loc: fullUrl,
-        lastmod: options.lastmod || today,
-        changefreq: options.changefreq || "weekly",
-        priority: typeof options.priority === "number" ? options.priority.toFixed(1) : (rawPath === "/" ? "1.0" : "0.8"),
+        lastmod: options.lastmod || undefined,
       });
     }
   }
@@ -60,13 +69,14 @@ export function generateSitemap() {
       for (const item of items) {
         const itemStr = item[1];
         const pathMatch = itemStr.match(/path:\s*["']([^"']+)["']/);
-        const freqMatch = itemStr.match(/changefreq:\s*["']([^"']+)["']/);
-        const prioMatch = itemStr.match(/priority:\s*([0-9.]+)/);
         if (pathMatch) {
-          addUrl(pathMatch[1], {
-            changefreq: freqMatch ? freqMatch[1] : undefined,
-            priority: prioMatch ? parseFloat(prioMatch[1]) : undefined,
-          });
+          const routePath = pathMatch[1];
+          let routeFile = path.join(ROOT_DIR, "src", "routes", `${routePath === "/" ? "index" : routePath.replace(/^\//, "")}.tsx`);
+          if (!fs.existsSync(routeFile)) {
+            routeFile = path.join(ROOT_DIR, "src", "routes", `${routePath.replace(/^\//, "")}.index.tsx`);
+          }
+          const lastmod = getFileLastmod(routeFile);
+          addUrl(routePath, { lastmod });
         }
       }
     }
@@ -88,7 +98,8 @@ export function generateSitemap() {
       } else {
         routePath = "/" + file.replace(".tsx", "");
       }
-      addUrl(routePath);
+      const lastmod = getFileLastmod(path.join(routesDir, file));
+      addUrl(routePath, { lastmod });
     }
   }
 
@@ -96,12 +107,10 @@ export function generateSitemap() {
   const destinationsPath = path.join(ROOT_DIR, "src", "data", "destinations.ts");
   if (fs.existsSync(destinationsPath)) {
     const content = fs.readFileSync(destinationsPath, "utf-8");
+    const destLastmod = getFileLastmod(destinationsPath);
     const slugMatches = [...content.matchAll(/slug:\s*["']([^"']+)["']/g)];
     for (const match of slugMatches) {
-      addUrl(`/destinations/${match[1]}`, {
-        changefreq: "weekly",
-        priority: 0.8,
-      });
+      addUrl(`/destinations/${match[1]}`, { lastmod: destLastmod });
     }
   }
 
@@ -109,16 +118,14 @@ export function generateSitemap() {
   const packagesPath = path.join(ROOT_DIR, "src", "data", "packages.ts");
   if (fs.existsSync(packagesPath)) {
     const content = fs.readFileSync(packagesPath, "utf-8");
+    const pkgLastmod = getFileLastmod(packagesPath);
     const slugMatches = [...content.matchAll(/^\s*slug:\s*["']([^"']+)["']/gm)];
     for (const match of slugMatches) {
-      addUrl(`/packages/${match[1]}`, {
-        changefreq: "daily",
-        priority: 0.8,
-      });
+      addUrl(`/packages/${match[1]}`, { lastmod: pkgLastmod });
     }
   }
 
-  // Build XML
+  // Build clean, standard compliant XML
   const urlsArray = Array.from(urlEntries.values());
   const xmlLines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -128,9 +135,9 @@ export function generateSitemap() {
   for (const entry of urlsArray) {
     xmlLines.push("  <url>");
     xmlLines.push(`    <loc>${escapeXml(entry.loc)}</loc>`);
-    xmlLines.push(`    <lastmod>${entry.lastmod}</lastmod>`);
-    xmlLines.push(`    <changefreq>${entry.changefreq}</changefreq>`);
-    xmlLines.push(`    <priority>${entry.priority}</priority>`);
+    if (entry.lastmod) {
+      xmlLines.push(`    <lastmod>${entry.lastmod}</lastmod>`);
+    }
     xmlLines.push("  </url>");
   }
 
