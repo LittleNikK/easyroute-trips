@@ -3,16 +3,9 @@ import { useState } from "react";
 import { Menu, X, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SITE } from "@/lib/site";
+import { NAV_ROUTES } from "@/config/routes";
 
-export const NAV = [
-  { to: "/destinations", label: "Destinations" },
-  { to: "/packages", label: "Tour Packages" },
-  { to: "/group-trips", label: "Group Trips" },
-  { to: "/custom-trips", label: "Custom Trips" },
-  { to: "/corporate-college-tours", label: "Corporate & College" },
-  { to: "/about", label: "About" },
-  { to: "/contact", label: "Contact" },
-] as const;
+export const NAV = NAV_ROUTES;
 
 export function Header() {
   const [open, setOpen] = useState(false);
